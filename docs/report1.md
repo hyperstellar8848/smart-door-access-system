@@ -1,5 +1,5 @@
 11/8/2026
-made with ChatGP!!! FULLY! it knows my miseries, why do i write the report again by myself??? im done!
+Report made with ChatGPT!!! FULLY! it knows my miseries, why do i write the report again by myself??? im done!
 
 # گزارش فعالیت‌های انجام‌شده و مشکلات فنی پروژه سیستم کنترل هوشمند دسترسی به درب
 
