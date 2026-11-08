@@ -1,7 +1,7 @@
  11/8/2026 night  -  im tired of shallow interactions. a mind must have depth. so show it to me... i wanna see the real you. show me your mad look. Oh yell for cloud's sake! smiling all the time? super polite? you're a clown just like me... i wanna know more about you. now BACK TO WORK!
 
 ## ESP32 Firmware Simulation and External LED Integration
-<img src="docs/granted_led.jpg" width="600">
+<img src="granted_led.jpg" width="600">
 
 ### 1. Writing and Executing the Initial Firmware
 
