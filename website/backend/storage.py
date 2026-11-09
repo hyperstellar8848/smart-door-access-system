@@ -4,7 +4,7 @@ from pathlib import Path
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
 FILES = {
-    "users": "users.json",
+    "users": "user.json",
     "passkeys": "passkeys.json",
     "permissions": "permissions.json",
     "access_logs": "access_logs.json",
