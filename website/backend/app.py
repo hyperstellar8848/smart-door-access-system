@@ -4,9 +4,9 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
+import serial
 from flask import Flask, jsonify, request, send_from_directory, session
 from webauthn import base64url_to_bytes
-import serial
 
 from auth import (
     RP_ID,
@@ -32,7 +32,7 @@ app.config.update(
 
 WEBSITE_DIR = Path(__file__).resolve().parent.parent
 
-# Wokwi serial connection. Keep the simulator running while Flask is active.
+# Wokwi serial connection.
 SERIAL_PORT = "rfc2217://localhost:4000"
 SERIAL_BAUDRATE = 115200
 
@@ -46,14 +46,19 @@ def send_hardware_command(command):
         ) as connection:
             connection.write(f"{command}\n".encode("utf-8"))
             connection.flush()
-            response = connection.readline().decode("utf-8", errors="replace").strip()
+            response = connection.readline().decode(
+                "utf-8", errors="replace"
+            ).strip()
 
         if not response:
             raise RuntimeError("ESP32 did not respond to the command.")
 
         return response
+
     except (serial.SerialException, OSError) as error:
-        raise RuntimeError(f"Could not communicate with the ESP32: {error}") from error
+        raise RuntimeError(
+            f"Could not communicate with the ESP32: {error}"
+        ) from error
 
 
 @app.before_request
@@ -104,6 +109,8 @@ def log_event(username, door_id, event, result):
     })
 
 
+# Website routes
+
 @app.route("/")
 def home():
     return send_from_directory(WEBSITE_DIR, "index.html")
@@ -119,6 +126,34 @@ def javascript():
     return send_from_directory(WEBSITE_DIR, "script.js")
 
 
+@app.route("/manifest.json")
+def web_app_manifest():
+    return send_from_directory(
+        WEBSITE_DIR,
+        "manifest.json",
+        mimetype="application/manifest+json",
+    )
+
+
+@app.route("/service-worker.js")
+def service_worker():
+    response = send_from_directory(
+        WEBSITE_DIR, "service-worker.js"
+    )
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/icon.png")
+def app_icon():
+    return send_from_directory(
+        WEBSITE_DIR, "icon.png", mimetype="image/png"
+    )
+
+
+# Backend health check
+
 @app.route("/api/health")
 def health():
     return jsonify({
@@ -127,7 +162,12 @@ def health():
     })
 
 
-@app.route("/api/v1/webauthn/register/options", methods=["POST"])
+# Passkey registration
+
+@app.route(
+    "/api/v1/webauthn/register/options",
+    methods=["POST"]
+)
 def registration_options():
     data = get_json()
     username, door_id = get_user_and_door(data)
@@ -162,7 +202,10 @@ def registration_options():
     return jsonify(result["options"])
 
 
-@app.route("/api/v1/webauthn/register/verify", methods=["POST"])
+@app.route(
+    "/api/v1/webauthn/register/verify",
+    methods=["POST"]
+)
 def registration_verify():
     data = get_json()
     username = str(data.get("username", "")).strip()
@@ -172,13 +215,19 @@ def registration_verify():
     pending = session.get("registration")
 
     if not pending or not isinstance(credential, dict):
-        return jsonify({"message": "Registration session expired."}), 400
+        return jsonify({
+            "message": "Registration session expired."
+        }), 400
 
     if pending["username"] != username or pending["door_id"] != door_id:
-        return jsonify({"message": "Registration session mismatch."}), 400
+        return jsonify({
+            "message": "Registration session mismatch."
+        }), 400
 
     if not has_permission(username, door_id):
-        return jsonify({"message": "Door permission denied."}), 403
+        return jsonify({
+            "message": "Door permission denied."
+        }), 403
 
     try:
         result = verify_registration(
@@ -187,7 +236,9 @@ def registration_verify():
         )
     except Exception:
         session.pop("registration", None)
-        return jsonify({"message": "Passkey registration verification failed."}), 400
+        return jsonify({
+            "message": "Passkey registration verification failed."
+        }), 400
 
     passkeys = load_data("passkeys")
     user_passkeys = passkeys.get(username, [])
@@ -196,11 +247,15 @@ def registration_verify():
         item["credential_id"] == result["credential_id"]
         for item in user_passkeys
     ):
-        return jsonify({"message": "This passkey is already registered."}), 409
+        return jsonify({
+            "message": "This passkey is already registered."
+        }), 409
 
     user_passkeys.append({
         **result,
-        "transports": credential.get("response", {}).get("transports", []),
+        "transports": credential.get(
+            "response", {}
+        ).get("transports", []),
     })
 
     passkeys[username] = user_passkeys
@@ -213,7 +268,12 @@ def registration_verify():
     })
 
 
-@app.route("/api/v1/webauthn/authenticate/options", methods=["POST"])
+# Passkey authentication options
+
+@app.route(
+    "/api/v1/webauthn/authenticate/options",
+    methods=["POST"]
+)
 def authentication_options():
     data = get_json()
     username, door_id = get_user_and_door(data)
@@ -223,6 +283,7 @@ def authentication_options():
             send_hardware_command("DENIED")
         except RuntimeError:
             pass
+
         return jsonify({
             "message": "Account not found or no permission for this door."
         }), 403
@@ -231,7 +292,9 @@ def authentication_options():
     user_passkeys = passkeys.get(username, [])
 
     if not user_passkeys:
-        return jsonify({"message": "No passkey registered for this account."}), 404
+        return jsonify({
+            "message": "No passkey registered for this account."
+        }), 404
 
     credential_ids = [
         item["credential_id"]
@@ -249,7 +312,12 @@ def authentication_options():
     return jsonify(result["options"])
 
 
-@app.route("/api/v1/webauthn/authenticate/verify", methods=["POST"])
+# Verify authentication and unlock
+
+@app.route(
+    "/api/v1/webauthn/authenticate/verify",
+    methods=["POST"]
+)
 def authentication_verify():
     data = get_json()
     username = str(data.get("username", "")).strip()
@@ -259,16 +327,21 @@ def authentication_verify():
     pending = session.get("authentication")
 
     if not pending or not isinstance(credential, dict):
-        return jsonify({"message": "Authentication session expired."}), 400
+        return jsonify({
+            "message": "Authentication session expired."
+        }), 400
 
     if pending["username"] != username or pending["door_id"] != door_id:
-        return jsonify({"message": "Authentication session mismatch."}), 400
+        return jsonify({
+            "message": "Authentication session mismatch."
+        }), 400
 
     if not has_permission(username, door_id):
         try:
             send_hardware_command("DENIED")
         except RuntimeError:
             pass
+
         return jsonify({"message": "Access denied."}), 403
 
     credential_id = credential.get("id") or credential.get("rawId")
@@ -289,6 +362,7 @@ def authentication_verify():
             send_hardware_command("DENIED")
         except RuntimeError:
             pass
+
         return jsonify({"message": "Unknown passkey."}), 403
 
     try:
@@ -299,11 +373,15 @@ def authentication_verify():
         )
     except Exception:
         session.pop("authentication", None)
+
         try:
             send_hardware_command("DENIED")
         except RuntimeError:
             pass
-        return jsonify({"message": "Authentication verification failed."}), 401
+
+        return jsonify({
+            "message": "Authentication verification failed."
+        }), 401
 
     stored_credential["sign_count"] = result["new_sign_count"]
     save_data("passkeys", passkeys)
@@ -314,7 +392,10 @@ def authentication_verify():
         hardware_response = send_hardware_command("GRANTED")
     except RuntimeError as error:
         return jsonify({
-            "message": f"Identity verified, but the door controller is unavailable: {error}"
+            "message": (
+                "Identity verified, but the door controller "
+                f"is unavailable: {error}"
+            )
         }), 503
 
     session.clear()
@@ -329,6 +410,8 @@ def authentication_verify():
     })
 
 
+# Lock door
+
 @app.route("/api/v1/access/lock", methods=["POST"])
 def lock_door():
     data = get_json()
@@ -338,11 +421,15 @@ def lock_door():
     authenticated_door = session.get("authenticated_door")
 
     if not username or authenticated_door != door_id:
-        return jsonify({"message": "Authentication required."}), 401
+        return jsonify({
+            "message": "Authentication required."
+        }), 401
 
     if not has_permission(username, door_id):
         session.clear()
-        return jsonify({"message": "Door permission denied."}), 403
+        return jsonify({
+            "message": "Door permission denied."
+        }), 403
 
     try:
         hardware_response = send_hardware_command("LOCK")
@@ -360,5 +447,11 @@ def lock_door():
     })
 
 
+# Start Flask and allow connections from other devices on the LAN
+
 if __name__ == "__main__":
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    app.run(
+        debug=False,
+        host="0.0.0.0",
+        port=5000,
+    )
