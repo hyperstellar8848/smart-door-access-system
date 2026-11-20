@@ -8,15 +8,15 @@
 // ==========================================
 
 // 0 = Wokwi: 2 LEDs + Servo
-// 1 = Physical: 1 LED
+// 1 = Physical: Common Anode RGB LED
 
 #define HARDWARE_MODE_WOKWI 0
 #define HARDWARE_MODE_PHYSICAL 1
 
-// Select PHYSICAL mode:
+// Select physical mode
 #define HARDWARE_MODE HARDWARE_MODE_PHYSICAL
 
-// For Wokwi, use this instead:
+// For Wokwi, comment the line above and use:
 // #define HARDWARE_MODE HARDWARE_MODE_WOKWI
 
 
@@ -24,13 +24,12 @@
 // WIFI CONFIGURATION
 // ==========================================
 
-// Physical ESP32 Wi-Fi credentials
-const char* WIFI_SSID = "YOUR_WIFI_NAME"; /////////////////////////////////////////////////////////////////////////////////////////////////////
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD"; /////////////////////////////////////////////////////////////////////////////////////////////
+const char* WIFI_SSID = "YOUR_WIFI_NAME";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// Wokwi Wi-Fi:
-// WIFI_SSID = "Wokwi-GUEST"
-// WIFI_PASSWORD = ""
+// Wokwi:
+// WIFI SSID: Wokwi-GUEST
+// WIFI PASSWORD: empty
 
 
 // ==========================================
@@ -45,6 +44,7 @@ bool serverStarted = false;
 bool mdnsStarted = false;
 
 unsigned long lastWiFiAttempt = 0;
+
 const unsigned long WIFI_RETRY_INTERVAL = 10000;
 
 
@@ -77,7 +77,25 @@ bool deniedBlinkActive = false;
 bool deniedBlinkState = false;
 
 unsigned long lastBlinkTime = 0;
+
 int blinkTransitions = 0;
+
+
+// ==========================================
+// PHYSICAL LED CONTROL
+// ==========================================
+
+// Common anode RGB LED:
+// HIGH = OFF
+// LOW  = ON
+
+void physicalLedOn() {
+    digitalWrite(STATUS_LED, LOW);
+}
+
+void physicalLedOff() {
+    digitalWrite(STATUS_LED, HIGH);
+}
 
 
 // ==========================================
@@ -89,7 +107,9 @@ void setDoorPosition(int angle) {
 #if HARDWARE_MODE == HARDWARE_MODE_WOKWI
 
     int pulseWidth = map(angle, 0, 180, 500, 2500);
-    uint32_t duty = (uint32_t)pulseWidth * 65535 / 20000;
+
+    uint32_t duty =
+        (uint32_t)pulseWidth * 65535 / 20000;
 
     ledcWrite(SERVO_PIN, duty);
 
@@ -100,7 +120,9 @@ void setDoorPosition(int angle) {
 void stopDeniedBlink() {
 
     deniedBlinkActive = false;
+
     deniedBlinkState = false;
+
     blinkTransitions = 0;
 }
 
@@ -112,13 +134,14 @@ void setLockedState() {
 #if HARDWARE_MODE == HARDWARE_MODE_WOKWI
 
     digitalWrite(GREEN_LED, LOW);
+
     digitalWrite(RED_LED, LOW);
 
     setDoorPosition(SERVO_LOCKED);
 
 #else
 
-    digitalWrite(STATUS_LED, LOW);
+    physicalLedOff();
 
 #endif
 }
@@ -131,13 +154,14 @@ void setGrantedState() {
 #if HARDWARE_MODE == HARDWARE_MODE_WOKWI
 
     digitalWrite(GREEN_LED, HIGH);
+
     digitalWrite(RED_LED, LOW);
 
     setDoorPosition(SERVO_UNLOCKED);
 
 #else
 
-    digitalWrite(STATUS_LED, HIGH);
+    physicalLedOn();
 
 #endif
 }
@@ -156,9 +180,11 @@ void setDeniedState() {
 #endif
 
     deniedBlinkActive = true;
+
     deniedBlinkState = true;
 
     lastBlinkTime = millis();
+
     blinkTransitions = 0;
 
 #if HARDWARE_MODE == HARDWARE_MODE_WOKWI
@@ -167,7 +193,7 @@ void setDeniedState() {
 
 #else
 
-    digitalWrite(STATUS_LED, HIGH);
+    physicalLedOn();
 
 #endif
 }
@@ -188,6 +214,7 @@ void updateDeniedBlink() {
         lastBlinkTime = millis();
 
         deniedBlinkState = !deniedBlinkState;
+
         blinkTransitions++;
 
 #if HARDWARE_MODE == HARDWARE_MODE_WOKWI
@@ -196,7 +223,10 @@ void updateDeniedBlink() {
 
 #else
 
-        digitalWrite(STATUS_LED, deniedBlinkState);
+        digitalWrite(
+            STATUS_LED,
+            deniedBlinkState ? LOW : HIGH
+        );
 
 #endif
 
@@ -210,7 +240,7 @@ void updateDeniedBlink() {
 
 #else
 
-            digitalWrite(STATUS_LED, LOW);
+            physicalLedOff();
 
 #endif
         }
@@ -222,9 +252,15 @@ void updateDeniedBlink() {
 // HTTP RESPONSE
 // ==========================================
 
-void sendResponse(int statusCode, const String& message) {
+void sendResponse(
+    int statusCode,
+    const String& message
+) {
 
-    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader(
+        "Access-Control-Allow-Origin",
+        "*"
+    );
 
     server.sendHeader(
         "Access-Control-Allow-Methods",
@@ -236,7 +272,11 @@ void sendResponse(int statusCode, const String& message) {
         "Content-Type"
     );
 
-    server.send(statusCode, "text/plain", message);
+    server.send(
+        statusCode,
+        "text/plain",
+        message
+    );
 }
 
 
@@ -246,7 +286,10 @@ void sendResponse(int statusCode, const String& message) {
 
 void handleRoot() {
 
-    sendResponse(200, "SMART DOOR SYSTEM ONLINE");
+    sendResponse(
+        200,
+        "SMART DOOR SYSTEM ONLINE"
+    );
 }
 
 
@@ -255,15 +298,23 @@ void handleDiscovery() {
     String response = "{";
 
     response += "\"device\":\"SMART_DOOR\",";
+
     response += "\"status\":\"ONLINE\",";
+
     response += "\"ip\":\"";
+
     response += WiFi.localIP().toString();
+
     response += "\",";
+
     response += "\"hostname\":\"smartdoor.local\"";
 
     response += "}";
 
-    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader(
+        "Access-Control-Allow-Origin",
+        "*"
+    );
 
     server.send(
         200,
@@ -277,7 +328,10 @@ void handleGranted() {
 
     setGrantedState();
 
-    sendResponse(200, "ACCESS GRANTED");
+    sendResponse(
+        200,
+        "ACCESS GRANTED"
+    );
 }
 
 
@@ -285,7 +339,10 @@ void handleDenied() {
 
     setDeniedState();
 
-    sendResponse(200, "ACCESS DENIED");
+    sendResponse(
+        200,
+        "ACCESS DENIED"
+    );
 }
 
 
@@ -293,19 +350,26 @@ void handleLock() {
 
     setLockedState();
 
-    sendResponse(200, "DOOR LOCKED");
+    sendResponse(
+        200,
+        "DOOR LOCKED"
+    );
 }
 
 
 // ==========================================
-// START NETWORK SERVICES
+// NETWORK SERVICES
 // ==========================================
 
 void startNetworkServices() {
 
     if (!serverStarted) {
 
-        server.on("/", HTTP_GET, handleRoot);
+        server.on(
+            "/",
+            HTTP_GET,
+            handleRoot
+        );
 
         server.on(
             "/discover",
@@ -338,7 +402,12 @@ void startNetworkServices() {
         );
 
         server.onNotFound([]() {
-            sendResponse(404, "ENDPOINT NOT FOUND");
+
+            sendResponse(
+                404,
+                "ENDPOINT NOT FOUND"
+            );
+
         });
 
         server.begin();
@@ -352,7 +421,11 @@ void startNetworkServices() {
 
         if (MDNS.begin(MDNS_HOSTNAME)) {
 
-            MDNS.addService("http", "tcp", 80);
+            MDNS.addService(
+                "http",
+                "tcp",
+                80
+            );
 
             mdnsStarted = true;
 
@@ -381,6 +454,7 @@ void startNetworkServices() {
 void connectWiFi() {
 
     Serial.println();
+
     Serial.println("CONNECTING TO WIFI...");
 
     WiFi.mode(WIFI_STA);
@@ -447,19 +521,27 @@ void setup() {
 
     digitalWrite(RED_LED, LOW);
 
-    ledcAttach(SERVO_PIN, 50, 16);
+    ledcAttach(
+        SERVO_PIN,
+        50,
+        16
+    );
 
     setDoorPosition(SERVO_LOCKED);
 
-    Serial.println("SYSTEM READY - WOKWI MODE");
+    Serial.println(
+        "SYSTEM READY - WOKWI MODE"
+    );
 
 #else
 
     pinMode(STATUS_LED, OUTPUT);
 
-    digitalWrite(STATUS_LED, LOW);
+    physicalLedOff();
 
-    Serial.println("SYSTEM READY - PHYSICAL MODE");
+    Serial.println(
+        "SYSTEM READY - PHYSICAL MODE"
+    );
 
 #endif
 
@@ -480,7 +562,7 @@ void loop() {
         server.handleClient();
     }
 
-    // Reconnect Wi-Fi if disconnected
+    // Wi-Fi reconnection
 
     if (WiFi.status() != WL_CONNECTED) {
 
@@ -490,7 +572,9 @@ void loop() {
 
             serverStarted = false;
 
-            Serial.println("WIFI DISCONNECTED");
+            Serial.println(
+                "WIFI DISCONNECTED"
+            );
         }
 
         if (mdnsStarted) {
@@ -513,7 +597,8 @@ void loop() {
 
     if (Serial.available()) {
 
-        String command = Serial.readStringUntil('\n');
+        String command =
+            Serial.readStringUntil('\n');
 
         command.trim();
 
